@@ -1,33 +1,63 @@
-#!/usr/bin/env python3
+from flask import Flask, request, jsonify, session, redirect, url_for, abort
+from flask_sqlalchemy import SQLAlchemy
+from config import Config
+from models import db, User
+from flask_bcrypt import Bcrypt
 
-from flask import request, session
-from flask_restful import Resource
-from sqlalchemy.exc import IntegrityError
+app = Flask(__name__)
+app.config.from_object(Config)
+db.init_app(app)
+bcrypt = Bcrypt(app)
 
-from config import app, db, api
-from models import User, Recipe
+@app.route('/')
+def home():
+    if 'user_id' in session:
+        return f'Hello, {session["username"]}! <a href="/logout">Logout</a>'
+    return 'Welcome! <a href="/login">Login</a> or <a href="/signup">Signup</a>'
 
-class Signup(Resource):
-    pass
+@app.route('/login', methods=['POST'])
+def login():
+    if 'user_id' in session:
+        return jsonify({'message': 'You are already signed in'}), 400
 
-class CheckSession(Resource):
-    pass
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
 
-class Login(Resource):
-    pass
+    if not username or not password:
+        return jsonify({'message': 'Username and password are required'}), 400
 
-class Logout(Resource):
-    pass
+    user = User.query.filter_by(username=username).first()
 
-class RecipeIndex(Resource):
-    pass
+    if not user or not user.check_password(password):
+        return jsonify({'message': 'Invalid username or password'}), 401
 
-api.add_resource(Signup, '/signup', endpoint='signup')
-api.add_resource(CheckSession, '/check_session', endpoint='check_session')
-api.add_resource(Login, '/login', endpoint='login')
-api.add_resource(Logout, '/logout', endpoint='logout')
-api.add_resource(RecipeIndex, '/recipes', endpoint='recipes')
+    session['user_id'] = user.id
+    session['username'] = user.username
 
+    return jsonify({'message': 'Login successful', 'user': {'id': user.id, 'username': user.username}})
+
+@app.route('/logout', methods=['DELETE'])
+def logout():
+    if 'user_id' not in session:
+        return jsonify({'message': 'You are not signed in'}), 401
+
+    session.clear()
+    return jsonify({'message': 'Logout successful'})
+
+@app.route('/protected-resource')
+def protected_resource():
+    if 'user_id' not in session:
+        return jsonify({'message': 'You are not signed in'}), 401
+
+    # Authorization logic for the protected resource
+    # Add your authorization code here
+    authorized_user = User.query.get(session['user_id'])
+
+    if not authorized_user:
+        return jsonify({'message': 'User not found'}), 401
+
+    return jsonify({'message': 'This is a protected resource', 'user': {'id': authorized_user.id, 'username': authorized_user.username}})
 
 if __name__ == '__main__':
-    app.run(port=5555, debug=True)
+    app.run(debug=True)
